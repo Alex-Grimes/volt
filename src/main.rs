@@ -1,7 +1,11 @@
 mod analyzer;
 use analyzer::CodeAnalyzer;
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fs,
+    path::{self, Path},
+};
 
 use git2::{DiffOptions, Repository};
 
@@ -41,12 +45,27 @@ fn main() -> Result<(), git2::Error> {
         )?;
     }
 
-    let mut sorted_churn: Vec<_> = voltage_map.into_iter().collect();
-    sorted_churn.sort_by(|a, b| b.1.cmp(&a.1));
+    let mut final_scores: Vec<(String, f64)> = Vec::new();
 
-    println!("--- Volt: High Voltage Files ---");
-    for (path, count) in sorted_churn.iter().take(5) {
-        println!("{:>4} commits | {}", count, path);
+    for (path_str, churn) in voltage_map {
+        let path = Path::new(&path_str);
+
+        if path.exists() && path.extension().map_or(false, |ext| ext == "rs") {
+            if let Ok(content) = fs::read_to_string(path) {
+                let complexity = rust_analyzer.score(&content);
+
+                let score = (churn as f64) * (complexity as f64).sqrt();
+                final_scores.push((path_str, score));
+            }
+        }
+    }
+
+    final_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    println!("{:<40} | {:<10}", "File Path", "Volt Score");
+    println!("{:-<55}", "");
+    for (path, score) in final_scores.iter().take(10) {
+        println!("{:<40} | {:<10.2}", path, score);
     }
 
     Ok(())

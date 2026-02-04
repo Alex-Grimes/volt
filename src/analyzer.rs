@@ -18,8 +18,42 @@ impl CodeAnalyzer {
     }
 
     fn traverse(&self, cursor: &mut TreeCursor) -> usize {
-        //TODO: add logic to determine complexity
-        42 // placeholder until i can work out logic 
+        let mut complexity = 0;
+        let mut depth = 0;
+        loop {
+            let node = cursor.node();
+
+            match node.kind() {
+                "if_expression" | "while_expression" | "for_expression" | "match_arm"
+                | "loop_expression" | "match_expression" => {
+                    complexity += 1 + depth;
+                }
+
+                "function_item" => {
+                    complexity += 1;
+                }
+                _ => {}
+            }
+
+            if cursor.goto_first_child() {
+                depth += 1;
+                continue;
+            }
+
+            if cursor.goto_next_sibling() {
+                continue;
+            }
+
+            loop {
+                if !cursor.goto_parent() {
+                    return complexity;
+                }
+                depth -= 1;
+                if cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
     }
 }
 
