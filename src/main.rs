@@ -1,15 +1,21 @@
 mod analyzer;
 use analyzer::CodeAnalyzer;
 
-use std::{
-    collections::HashMap,
-    fs,
-    path::{self, Path},
-};
+use serde::Serialize;
+
+use std::{collections::HashMap, error::Error, fs, path::Path};
 
 use git2::{DiffOptions, Repository};
 
-fn main() -> Result<(), git2::Error> {
+#[derive(Serialize)]
+struct VoltResult {
+    file_path: String,
+    score: f64,
+    churn: usize,
+    complexity: usize,
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
     let mut rust_analyzer = CodeAnalyzer::new(tree_sitter_rust::LANGUAGE.into());
     let repo = Repository::discover(".")?;
     let mut revwalk = repo.revwalk()?;
@@ -60,13 +66,25 @@ fn main() -> Result<(), git2::Error> {
         }
     }
 
-    final_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    //final_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let final_scores_structs: Vec<VoltResult> = final_scores
+        .into_iter()
+        .map(|(path, score)| VoltResult {
+            file_path: path,
+            score,
+            churn: 0,
+            complexity: 0,
+        })
+        .collect();
 
-    println!("{:<40} | {:<10}", "File Path", "Volt Score");
-    println!("{:-<55}", "");
-    for (path, score) in final_scores.iter().take(10) {
-        println!("{:<40} | {:<10.2}", path, score);
-    }
+    let output = serde_json::to_string(&final_scores_structs)?;
+    println!("{}", output);
+
+    //println!("{:<40} | {:<10}", "File Path", "Volt Score");
+    //println!("{:-<55}", "");
+    //for (path, score) in final_scores.iter().take(10) {
+    //  println!("{:<40} | {:<10.2}", path, score);
+    //}
 
     Ok(())
 }
