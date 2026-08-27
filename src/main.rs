@@ -1,5 +1,5 @@
 mod analyzer;
-use analyzer::CodeAnalyzer;
+use analyzer::{CodeAnalyzer, SupportedLanguage};
 
 use serde::Serialize;
 
@@ -16,7 +16,6 @@ struct VoltResult {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut rust_analyzer = CodeAnalyzer::new(tree_sitter_rust::LANGUAGE.into());
     let repo = Repository::discover(".")?;
     let mut revwalk = repo.revwalk()?;
     revwalk.push_head()?;
@@ -51,40 +50,36 @@ fn main() -> Result<(), Box<dyn Error>> {
         )?;
     }
 
-    let mut final_scores: Vec<(String, f64)> = Vec::new();
+    let mut analyzers: HashMap<SupportedLanguage, CodeAnalyzer> = HashMap::new();
+    let mut final_scores: Vec<VoltResult> = Vec::new();
 
     for (path_str, churn) in voltage_map {
         let path = Path::new(&path_str);
 
-        if path.exists() && path.extension().map_or(false, |ext| ext == "rs") {
-            if let Ok(content) = fs::read_to_string(path) {
-                let complexity = rust_analyzer.score(&content);
+        if path.exists() {
+            if let Some(lang) = SupportedLanguage::from_path(path) {
+                if let Ok(content) = fs::read_to_string(path) {
+                    let analyzer = analyzers
+                        .entry(lang)
+                        .or_insert_with(|| CodeAnalyzer::new(lang));
+                    let complexity = analyzer.score(&content);
+                    let score = (churn as f64) * (complexity as f64).sqrt();
 
-                let score = (churn as f64) * (complexity as f64).sqrt();
-                final_scores.push((path_str, score));
+                    final_scores.push(VoltResult {
+                        file_path: path_str,
+                        score,
+                        churn,
+                        complexity,
+                    });
+                }
             }
         }
     }
 
-    //final_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    let final_scores_structs: Vec<VoltResult> = final_scores
-        .into_iter()
-        .map(|(path, score)| VoltResult {
-            file_path: path,
-            score,
-            churn: 0,
-            complexity: 0,
-        })
-        .collect();
+    final_scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
-    let output = serde_json::to_string(&final_scores_structs)?;
+    let output = serde_json::to_string(&final_scores)?;
     println!("{}", output);
-
-    //println!("{:<40} | {:<10}", "File Path", "Volt Score");
-    //println!("{:-<55}", "");
-    //for (path, score) in final_scores.iter().take(10) {
-    //  println!("{:<40} | {:<10.2}", path, score);
-    //}
 
     Ok(())
 }

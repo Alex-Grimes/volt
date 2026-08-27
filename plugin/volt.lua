@@ -1,3 +1,6 @@
 vim.api.nvim_create_user_command("VoltScan", function()
 	require("volt").scan_project()
 end, {})
+vim.api.nvim_create_user_command("VoltSummary", function()
+	require("volt").show_summary()
+end, {})
