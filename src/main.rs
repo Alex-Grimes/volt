@@ -1,22 +1,35 @@
 mod analyzer;
+mod cli;
+
 use analyzer::{calculate_voltage_score, CodeAnalyzer, SupportedLanguage};
+use clap::Parser;
+use cli::{format_table, Cli, OutputFormat};
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
-use serde::Serialize;
-
-use std::{collections::HashMap, error::Error, fs, path::Path};
+use std::{collections::HashMap, error::Error, fs, path::Path, process};
 
 use git2::{DiffOptions, Repository};
 
-#[derive(Serialize, serde::Deserialize, Debug, PartialEq)]
-struct VoltResult {
-    file_path: String,
-    score: f64,
-    churn: usize,
-    complexity: usize,
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct VoltResult {
+    pub file_path: String,
+    pub score: f64,
+    pub churn: usize,
+    pub complexity: usize,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let repo = Repository::discover(".")?;
+fn analyze_repository(cli: &Cli) -> Result<Vec<VoltResult>, Box<dyn Error>> {
+    let repo = Repository::discover(&cli.path).map_err(|e| {
+        format!(
+            "Failed to find git repository at '{}': {}",
+            cli.path.display(),
+            e
+        )
+    })?;
+
+    let repo_root = repo.workdir().unwrap_or(Path::new("."));
+
     let mut revwalk = repo.revwalk()?;
     revwalk.push_head()?;
 
@@ -50,38 +63,72 @@ fn main() -> Result<(), Box<dyn Error>> {
         )?;
     }
 
-    let mut analyzers: HashMap<SupportedLanguage, CodeAnalyzer> = HashMap::new();
-    let mut final_scores: Vec<VoltResult> = Vec::new();
+    let mut final_scores: Vec<VoltResult> = voltage_map
+        .into_par_iter()
+        .filter_map(|(path_str, churn)| {
+            let path = repo_root.join(&path_str);
+            if !path.exists() {
+                return None;
+            }
 
-    for (path_str, churn) in voltage_map {
-        let path = Path::new(&path_str);
+            let lang = SupportedLanguage::from_path(&path)?;
 
-        if path.exists() {
-            if let Some(lang) = SupportedLanguage::from_path(path) {
-                if let Ok(content) = fs::read_to_string(path) {
-                    let analyzer = analyzers
-                        .entry(lang)
-                        .or_insert_with(|| CodeAnalyzer::new(lang));
-                    let complexity = analyzer.score(&content);
-                    let score = calculate_voltage_score(churn, complexity);
-
-                    final_scores.push(VoltResult {
-                        file_path: path_str,
-                        score,
-                        churn,
-                        complexity,
-                    });
+            if !cli.include_ext.is_empty() {
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                if !cli.include_ext.iter().any(|e| e.eq_ignore_ascii_case(ext)) {
+                    return None;
                 }
             }
-        }
-    }
+
+            let content = fs::read_to_string(&path).ok()?;
+            let mut analyzer = CodeAnalyzer::new(lang);
+            let complexity = analyzer.score(&content);
+            let score = calculate_voltage_score(churn, complexity);
+
+            if let Some(min_score) = cli.min_score {
+                if score < min_score {
+                    return None;
+                }
+            }
+
+            Some(VoltResult {
+                file_path: path_str,
+                score,
+                churn,
+                complexity,
+            })
+        })
+        .collect();
 
     final_scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
-    let output = serde_json::to_string(&final_scores)?;
-    println!("{}", output);
+    if let Some(top) = cli.top {
+        final_scores.truncate(top);
+    }
 
-    Ok(())
+    Ok(final_scores)
+}
+
+fn main() {
+    let cli = Cli::parse();
+
+    match analyze_repository(&cli) {
+        Ok(results) => match cli.resolved_format() {
+            OutputFormat::Json => {
+                let output =
+                    serde_json::to_string(&results).expect("Failed to serialize results to JSON");
+                println!("{}", output);
+            }
+            OutputFormat::Table => {
+                let output = format_table(&results);
+                print!("{}", output);
+            }
+        },
+        Err(err) => {
+            eprintln!("⚡ Volt Error: {}", err);
+            process::exit(1);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -144,5 +191,38 @@ mod tests {
         assert_eq!(results[0].file_path, "high.rs");
         assert_eq!(results[1].file_path, "medium.rs");
         assert_eq!(results[2].file_path, "low.rs");
+    }
+
+    #[test]
+    fn test_top_and_min_score_filtering() {
+        let mut results = vec![
+            VoltResult {
+                file_path: "a.rs".to_string(),
+                score: 100.0,
+                churn: 10,
+                complexity: 100,
+            },
+            VoltResult {
+                file_path: "b.rs".to_string(),
+                score: 50.0,
+                churn: 5,
+                complexity: 100,
+            },
+            VoltResult {
+                file_path: "c.rs".to_string(),
+                score: 10.0,
+                churn: 2,
+                complexity: 25,
+            },
+        ];
+
+        // Filter min_score >= 40.0
+        results.retain(|r| r.score >= 40.0);
+        assert_eq!(results.len(), 2);
+
+        // Truncate to top 1
+        results.truncate(1);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].file_path, "a.rs");
     }
 }
