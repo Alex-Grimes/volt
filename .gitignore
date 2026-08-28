@@ -2,3 +2,8 @@
 .nvimlog
 editors/vscode/node_modules
 editors/vscode/out
+.gradle
+editors/intellij/build
+editors/intellij/.gradle
+.idea
+*.iml

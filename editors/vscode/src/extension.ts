@@ -32,7 +32,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     try {
-      const results = await runVoltScan(root);
+      const results = await runVoltScan(root, context.globalStorageUri.fsPath);
       cachedResults = results;
       resultsByPath.clear();
 

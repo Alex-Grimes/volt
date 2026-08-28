@@ -1,0 +1,47 @@
+<idea-plugin>
+    <id>com.volt.intellij</id>
+    <name>Volt: Codebase Hotspots</name>
+    <vendor email="alexgrimes.se@gmail.com" url="https://github.com/Alex-Grimes/volt">Alex Grimes</vendor>
+
+    <description><![CDATA[
+    ⚡ <b>Volt: Codebase Hotspot & AST Complexity Analyzer</b><br/>
+    Identifies high-risk, frequently modified, and cognitively complex code before bugs strike.<br/><br/>
+    <b>Features:</b>
+    <ul>
+        <li>Gutter line markers on file headers and hot function declarations</li>
+        <li>Interactive sidebar ToolWindow ranking hotspot files and functions</li>
+        <li>Status bar voltage score indicator</li>
+        <li>Multi-language support (Rust, Go, Java, Python, JS, TS, TSX)</li>
+    </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Volt"
+                    secondary="true"
+                    anchor="right"
+                    factoryClass="com.volt.toolwindow.VoltToolWindowFactory"
+                    icon="/icons/zap.svg"/>
+
+        <codeInsight.lineMarkerProvider language=""
+                                        implementationClass="com.volt.markers.VoltLineMarkerProvider"/>
+
+        <statusBarWidgetFactory implementation="com.volt.statusbar.VoltStatusBarWidgetFactory"
+                                id="VoltStatusBarWidget"/>
+
+        <postStartupActivity implementation="com.volt.service.VoltStartupActivity"/>
+    </extensions>
+
+    <actions>
+        <group id="Volt.Menu" text="Volt" description="Volt hotspot analysis commands" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="Volt.Scan" class="com.volt.actions.ScanAction" text="Scan Workspace Hotspots"
+                    description="Run volt-core scan on the current project" icon="/icons/zap.svg"/>
+            <action id="Volt.Refresh" class="com.volt.actions.RefreshAction" text="Refresh Hotspot Analysis"
+                    description="Rescan and update all views"/>
+            <action id="Volt.Clear" class="com.volt.actions.ClearAction" text="Clear Hotspot Annotations"
+                    description="Clear all gutter marks and cached results"/>
+        </group>
+    </actions>
+</idea-plugin>

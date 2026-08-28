@@ -90,6 +90,21 @@ use {
 
 ---
 
+## 🛠️ Installation (IntelliJ IDEA & JetBrains IDEs)
+
+1. Build the backend binary:
+   ```bash
+   cargo build --release
+   ```
+2. Build the plugin distribution archive from [`editors/intellij`](./editors/intellij):
+   ```bash
+   cd editors/intellij
+   ./gradlew buildPlugin
+   ```
+3. In your JetBrains IDE (IntelliJ, PyCharm, RustRover, GoLand, etc.), navigate to **Settings > Plugins > ⚙️ > Install Plugin from Disk...** and select `build/distributions/volt-intellij-0.1.0.zip`.
+
+---
+
 ## ⚙️ Configuration
 
 Volt works out of the box with zero configuration, but can be customized:

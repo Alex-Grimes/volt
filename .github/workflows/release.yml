@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-binaries:
+    name: Build Binary (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: volt-core-x86_64-unknown-linux-gnu
+            binary_name: volt-core
+            archive_ext: tar.gz
+
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact_name: volt-core-x86_64-apple-darwin
+            binary_name: volt-core
+            archive_ext: tar.gz
+
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact_name: volt-core-aarch64-apple-darwin
+            binary_name: volt-core
+            archive_ext: tar.gz
+
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: volt-core-x86_64-pc-windows-msvc
+            binary_name: volt-core.exe
+            archive_ext: zip
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build volt-core
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package Binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar -czf ../../../${{ matrix.artifact_name }}.tar.gz ${{ matrix.binary_name }}
+
+      - name: Package Binary (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a -tzip ../../../${{ matrix.artifact_name }}.zip ${{ matrix.binary_name }}
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.${{ matrix.archive_ext }}
+
+  build-vscode:
+    name: Package VS Code Extension
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies & Package
+        working-directory: editors/vscode
+        run: |
+          npm ci
+          npm run compile
+          npx @vscode/vsce package --out ../../volt-vscode.vsix
+
+      - name: Upload VS Code Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: volt-vscode
+          path: volt-vscode.vsix
+
+  build-intellij:
+    name: Package IntelliJ Plugin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build Plugin with Gradle
+        working-directory: editors/intellij
+        run: |
+          chmod +x ./gradlew || true
+          gradle buildPlugin || ./gradlew buildPlugin
+
+      - name: Upload IntelliJ Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: volt-intellij
+          path: editors/intellij/build/distributions/*.zip
+
+  publish-release:
+    name: Create GitHub Release
+    needs: [build-binaries, build-vscode, build-intellij]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Flatten Artifacts
+        run: |
+          mkdir dist
+          find release-artifacts -type f -exec mv {} dist/ \;
+          ls -la dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
