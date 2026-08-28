@@ -198,6 +198,10 @@ impl CodeAnalyzer {
     }
 }
 
+pub fn calculate_voltage_score(churn: usize, complexity: usize) -> f64 {
+    (churn as f64) * (complexity as f64).sqrt()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -330,6 +334,242 @@ mod tests {
     }
 
     #[test]
+    fn test_empty_and_comments_only() {
+        let mut analyzer = CodeAnalyzer::new(SupportedLanguage::Rust);
+        assert_eq!(analyzer.score(""), 0);
+        assert_eq!(
+            analyzer.score("// just a comment\n/* block comment */"),
+            0
+        );
+
+        let mut py_analyzer = CodeAnalyzer::new(SupportedLanguage::Python);
+        assert_eq!(py_analyzer.score("# python comment\n"), 0);
+    }
+
+    #[test]
+    fn test_syntax_error_resilience() {
+        let mut analyzer = CodeAnalyzer::new(SupportedLanguage::Rust);
+        let broken_code = r#"
+            fn valid_part_with_error(x: i32) {
+                if x > 0 {
+                    println!("valid if");
+                }
+                @@@ invalid syntax here ???
+            }
+        "#;
+        let score = analyzer.score(broken_code);
+        assert!(
+            score > 0,
+            "Analyzer should gracefully parse valid segments even with syntax errors"
+        );
+    }
+
+    #[test]
+    fn test_nesting_depth_increases_score() {
+        let mut analyzer = CodeAnalyzer::new(SupportedLanguage::Rust);
+
+        let flat_code = r#"
+            fn flat(a: bool, b: bool, c: bool) {
+                if a { println!("a"); }
+                if b { println!("b"); }
+                if c { println!("c"); }
+            }
+        "#;
+
+        let nested_code = r#"
+            fn nested(a: bool, b: bool, c: bool) {
+                if a {
+                    if b {
+                        if c {
+                            println!("nested");
+                        }
+                    }
+                }
+            }
+        "#;
+
+        let flat_score = analyzer.score(flat_code);
+        let nested_score = analyzer.score(nested_code);
+        assert!(
+            nested_score > flat_score,
+            "Nested complexity ({}) must be strictly higher than flat complexity ({})",
+            nested_score,
+            flat_score
+        );
+    }
+
+    #[test]
+    fn test_rust_advanced_constructs() {
+        let mut analyzer = CodeAnalyzer::new(SupportedLanguage::Rust);
+        let code = r#"
+            fn process(val: Option<i32>) {
+                let closure = |x: i32| x * 2;
+                loop {
+                    match val {
+                        Some(1) => break,
+                        Some(x) if x > 10 => {
+                            while let Some(y) = Some(x) {
+                                println!("{}", closure(y));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        "#;
+        let score = analyzer.score(code);
+        assert!(
+            score > 5,
+            "Advanced Rust constructs should yield a high score"
+        );
+    }
+
+    #[test]
+    fn test_go_advanced_constructs() {
+        let mut analyzer = CodeAnalyzer::new(SupportedLanguage::Go);
+        let code = r#"
+            package main
+            func worker(ch1, ch2 chan int) {
+                go func() {
+                    for {
+                        select {
+                        case msg1 := <-ch1:
+                            if msg1 > 0 {
+                                println(msg1)
+                            }
+                        case msg2 := <-ch2:
+                            println(msg2)
+                        }
+                    }
+                }()
+            }
+        "#;
+        let score = analyzer.score(code);
+        assert!(
+            score > 5,
+            "Go channels, select, and goroutines should be scored"
+        );
+    }
+
+    #[test]
+    fn test_java_advanced_constructs() {
+        let mut analyzer = CodeAnalyzer::new(SupportedLanguage::Java);
+        let code = r#"
+            class Service {
+                public void handle(List<String> items) {
+                    for (String item : items) {
+                        try {
+                            int val = item.length() > 5 ? 1 : 0;
+                            do {
+                                val--;
+                            } while (val > 0);
+                        } catch (NullPointerException e) {
+                            // handle
+                        } catch (Exception e) {
+                            // handle
+                        }
+                    }
+                }
+            }
+        "#;
+        let score = analyzer.score(code);
+        assert!(
+            score > 5,
+            "Java enhanced for, do-while, ternary, multiple catch should be scored"
+        );
+    }
+
+    #[test]
+    fn test_python_advanced_constructs() {
+        let mut analyzer = CodeAnalyzer::new(SupportedLanguage::Python);
+        let code = r#"
+            def complex_calc(data):
+                squares = [x**2 for x in data if x > 0]
+                evens = {k: v for k, v in data.items() if v % 2 == 0}
+                match data:
+                    case [1, 2]:
+                        return True
+                    case [x, y] if x > y:
+                        return False
+                    case _:
+                        pass
+                try:
+                    res = 1 / len(squares)
+                except ZeroDivisionError:
+                    res = 0
+                except Exception:
+                    res = -1
+                return res
+        "#;
+        let score = analyzer.score(code);
+        assert!(
+            score > 5,
+            "Python comprehensions, match/case, and try/except should be scored"
+        );
+    }
+
+    #[test]
+    fn test_javascript_advanced_constructs() {
+        let mut analyzer = CodeAnalyzer::new(SupportedLanguage::JavaScript);
+        let code = r#"
+            async function processAll(items) {
+                for (const item of items) {
+                    for (const key in item) {
+                        switch (key) {
+                            case "a":
+                                console.log(item[key]);
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                }
+                const fn = () => items.length > 0 ? true : false;
+                try {
+                    await Promise.all([]);
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+        "#;
+        let score = analyzer.score(code);
+        assert!(
+            score > 5,
+            "JS for-in, for-of, switch, ternary, try-catch, arrow fn should be scored"
+        );
+    }
+
+    #[test]
+    fn test_typescript_generics_and_types() {
+        let mut analyzer = CodeAnalyzer::new(SupportedLanguage::TypeScript);
+        let code = r#"
+            interface Item<T> { data: T; }
+            function processItem<T>(item: Item<T>): boolean {
+                if (!item.data) {
+                    return false;
+                }
+                for (let i = 0; i < 10; i++) {
+                    if (i % 2 === 0) return true;
+                }
+                return false;
+            }
+        "#;
+        let score = analyzer.score(code);
+        assert!(
+            score > 0,
+            "TypeScript code with interfaces and generics should score properly"
+        );
+    }
+
+    #[test]
+    fn test_calculate_voltage_score() {
+        assert_eq!(calculate_voltage_score(0, 100), 0.0);
+        assert_eq!(calculate_voltage_score(10, 0), 0.0);
+        assert_eq!(calculate_voltage_score(4, 9), 12.0); // 4 * sqrt(9) = 4 * 3 = 12.0
+        assert_eq!(calculate_voltage_score(2, 16), 8.0); // 2 * sqrt(16) = 2 * 4 = 8.0
+    }
+
+    #[test]
     fn test_extension_detection() {
         assert_eq!(
             SupportedLanguage::from_path(Path::new("src/main.rs")),
@@ -360,8 +600,41 @@ mod tests {
             Some(SupportedLanguage::Tsx)
         );
         assert_eq!(
-            SupportedLanguage::from_path(Path::new("README.md")),
-            None
+            SupportedLanguage::from_path(Path::new("src/component.test.tsx")),
+            Some(SupportedLanguage::Tsx)
         );
+        assert_eq!(
+            SupportedLanguage::from_path(Path::new("scripts/bundle.min.js")),
+            Some(SupportedLanguage::JavaScript)
+        );
+        assert_eq!(
+            SupportedLanguage::from_path(Path::new("types/api.d.ts")),
+            Some(SupportedLanguage::TypeScript)
+        );
+        assert_eq!(
+            SupportedLanguage::from_path(Path::new("types/api.d.mts")),
+            Some(SupportedLanguage::TypeScript)
+        );
+        assert_eq!(
+            SupportedLanguage::from_path(Path::new("types/api.d.cts")),
+            Some(SupportedLanguage::TypeScript)
+        );
+        assert_eq!(
+            SupportedLanguage::from_path(Path::new("lib/module.mjs")),
+            Some(SupportedLanguage::JavaScript)
+        );
+        assert_eq!(
+            SupportedLanguage::from_path(Path::new("lib/module.cjs")),
+            Some(SupportedLanguage::JavaScript)
+        );
+        assert_eq!(
+            SupportedLanguage::from_path(Path::new("stubs.pyi")),
+            Some(SupportedLanguage::Python)
+        );
+        assert_eq!(SupportedLanguage::from_path(Path::new("Dockerfile")), None);
+        assert_eq!(SupportedLanguage::from_path(Path::new("Makefile")), None);
+        assert_eq!(SupportedLanguage::from_path(Path::new("config.toml")), None);
+        assert_eq!(SupportedLanguage::from_path(Path::new("data.json")), None);
+        assert_eq!(SupportedLanguage::from_path(Path::new("README.md")), None);
     }
 }
