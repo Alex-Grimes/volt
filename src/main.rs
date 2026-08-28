@@ -1,9 +1,9 @@
 mod analyzer;
 mod cli;
 
-use analyzer::{calculate_voltage_score, CodeAnalyzer, SupportedLanguage};
+pub use analyzer::{CodeAnalyzer, FunctionHotspot, SupportedLanguage, calculate_voltage_score};
 use clap::Parser;
-use cli::{format_table, Cli, OutputFormat};
+use cli::{Cli, OutputFormat, format_table};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +17,8 @@ pub struct VoltResult {
     pub score: f64,
     pub churn: usize,
     pub complexity: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub functions: Vec<FunctionHotspot>,
 }
 
 fn analyze_repository(cli: &Cli) -> Result<Vec<VoltResult>, Box<dyn Error>> {
@@ -82,13 +84,11 @@ fn analyze_repository(cli: &Cli) -> Result<Vec<VoltResult>, Box<dyn Error>> {
 
             let content = fs::read_to_string(&path).ok()?;
             let mut analyzer = CodeAnalyzer::new(lang);
-            let complexity = analyzer.score(&content);
+            let (complexity, functions) = analyzer.analyze(&content, churn);
             let score = calculate_voltage_score(churn, complexity);
 
-            if let Some(min_score) = cli.min_score {
-                if score < min_score {
-                    return None;
-                }
+            if cli.min_score.is_some_and(|min_score| score < min_score) {
+                return None;
             }
 
             Some(VoltResult {
@@ -96,11 +96,16 @@ fn analyze_repository(cli: &Cli) -> Result<Vec<VoltResult>, Box<dyn Error>> {
                 score,
                 churn,
                 complexity,
+                functions,
             })
         })
         .collect();
 
-    final_scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    final_scores.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     if let Some(top) = cli.top {
         final_scores.truncate(top);
@@ -120,7 +125,7 @@ fn main() {
                 println!("{}", output);
             }
             OutputFormat::Table => {
-                let output = format_table(&results);
+                let output = format_table(&results, cli.functions);
                 print!("{}", output);
             }
         },
@@ -143,12 +148,20 @@ mod tests {
                 score: 42.5,
                 churn: 5,
                 complexity: 72,
+                functions: vec![FunctionHotspot {
+                    name: "main".to_string(),
+                    line: 112,
+                    end_line: 132,
+                    complexity: 10,
+                    score: 15.8,
+                }],
             },
             VoltResult {
                 file_path: "src/lib.rs".to_string(),
                 score: 10.0,
                 churn: 2,
                 complexity: 25,
+                functions: vec![],
             },
         ];
 
@@ -161,6 +174,7 @@ mod tests {
         assert!(json.contains("\"score\":42.5"));
         assert!(json.contains("\"churn\":5"));
         assert!(json.contains("\"complexity\":72"));
+        assert!(json.contains("\"name\":\"main\""));
     }
 
     #[test]
@@ -171,22 +185,29 @@ mod tests {
                 score: 5.0,
                 churn: 1,
                 complexity: 25,
+                functions: vec![],
             },
             VoltResult {
                 file_path: "high.rs".to_string(),
                 score: 100.0,
                 churn: 10,
                 complexity: 100,
+                functions: vec![],
             },
             VoltResult {
                 file_path: "medium.rs".to_string(),
                 score: 50.0,
                 churn: 5,
                 complexity: 100,
+                functions: vec![],
             },
         ];
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         assert_eq!(results[0].file_path, "high.rs");
         assert_eq!(results[1].file_path, "medium.rs");
@@ -201,18 +222,21 @@ mod tests {
                 score: 100.0,
                 churn: 10,
                 complexity: 100,
+                functions: vec![],
             },
             VoltResult {
                 file_path: "b.rs".to_string(),
                 score: 50.0,
                 churn: 5,
                 complexity: 100,
+                functions: vec![],
             },
             VoltResult {
                 file_path: "c.rs".to_string(),
                 score: 10.0,
                 churn: 2,
                 complexity: 25,
+                functions: vec![],
             },
         ];
 

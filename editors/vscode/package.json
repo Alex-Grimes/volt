@@ -1,0 +1,139 @@
+{
+  "name": "volt-vscode",
+  "displayName": "Volt: Codebase Hotspots",
+  "description": "⚡ Codebase voltage analyzer: calculates churn × AST complexity hotspot scores",
+  "version": "0.1.0",
+  "publisher": "alex-grimes",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "hotspots",
+    "complexity",
+    "churn",
+    "git",
+    "refactoring",
+    "tree-sitter"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "volt.scan",
+        "title": "Volt: Scan Workspace Hotspots",
+        "category": "Volt",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "volt.quickPick",
+        "title": "Volt: Show Hotspots List",
+        "category": "Volt"
+      },
+      {
+        "command": "volt.refresh",
+        "title": "Volt: Refresh Analysis",
+        "category": "Volt",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "volt.clear",
+        "title": "Volt: Clear Annotations",
+        "category": "Volt"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "volt-explorer",
+          "title": "Volt",
+          "icon": "$(zap)"
+        }
+      ]
+    },
+    "views": {
+      "volt-explorer": [
+        {
+          "id": "volt.hotspotsView",
+          "name": "⚡ Hotspot Analysis"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "volt.refresh",
+          "when": "view == volt.hotspotsView",
+          "group": "navigation"
+        },
+        {
+          "command": "volt.scan",
+          "when": "view == volt.hotspotsView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Volt",
+      "properties": {
+        "volt.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path to the volt-core binary. If empty, automatically searched in workspace and PATH."
+        },
+        "volt.autoScan": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan workspace on startup and document save."
+        },
+        "volt.decorations.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline virtual text and gutter decorations on hot files."
+        },
+        "volt.decorations.showFunctions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline virtual text on high-voltage function declaration lines."
+        },
+        "volt.decorations.minFunctionComplexity": {
+          "type": "number",
+          "default": 5,
+          "description": "Minimum complexity threshold to annotate individual functions."
+        },
+        "volt.thresholds.high": {
+          "type": "number",
+          "default": 50,
+          "description": "Threshold score for High Voltage (Red/Error style)."
+        },
+        "volt.thresholds.medium": {
+          "type": "number",
+          "default": 20,
+          "description": "Threshold score for Medium Voltage (Yellow/Warning style)."
+        },
+        "volt.thresholds.low": {
+          "type": "number",
+          "default": 5,
+          "description": "Threshold score for Low Voltage (Cyan/Info style)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}

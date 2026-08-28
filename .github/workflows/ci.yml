@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust:
+    name: Rust Checks & Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check Formatting
+        run: cargo fmt --check
+
+      - name: Clippy Linter
+        run: cargo clippy -- -D warnings
+
+      - name: Run Tests
+        run: cargo test --all
+
+  neovim:
+    name: Neovim Plugin Validation
+    runs-on: ubuntu-latest
+    needs: rust
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build volt-core Binary
+        run: cargo build --release
+
+      - name: Setup Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Validate Neovim Lua Setup & Modules
+        run: |
+          nvim --headless -u NONE -i NONE \
+            -c "set rtp+=." \
+            -c "runtime plugin/volt.lua" \
+            -c "lua require('volt').setup({})" \
+            -c "lua require('volt.ui')" \
+            -c "lua require('volt.snacks')" \
+            -c "lua require('volt.telescope')" \
+            -c "lua print('⚡ Neovim Volt validation passed!')" \
+            -c "q"
+
+  vscode:
+    name: VS Code Extension Compilation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        working-directory: editors/vscode
+        run: npm ci
+
+      - name: Compile Extension
+        working-directory: editors/vscode
+        run: npm run compile
+
